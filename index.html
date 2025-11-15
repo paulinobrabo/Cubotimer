@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="pt-BR" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Speedcubing Timer - Fix Buttons</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    :root { --ring-radius: 90; }
+
+    body { box-sizing: border-box; font-family: Inter, system-ui, sans-serif; }
+    .gradient-bg {
+      background:
+        radial-gradient(circle at 20% 80%, rgba(255,0,0,0.08) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(0,0,255,0.06) 0%, transparent 50%),
+        linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+      min-height:100vh;
+      background-attachment: fixed;
+    }
+
+    /* basic cube visuals kept */
+    .cube-face { width: 30px; height: 30px; border:2px solid #333; border-radius:4px; display:inline-block; margin:2px; }
+    .face-white{background:#fff} .face-yellow{background:#ff0} .face-red{background:#f00}
+    .face-orange{background:#ff8c00} .face-blue{background:#00f} .face-green{background:#0f0}
+    .cube-3d { width:80px; height:80px; position:relative; transform-style:preserve-3d; animation:rotateCube 10s linear infinite; margin:0 auto 20px;}
+    @keyframes rotateCube{0%{transform:rotateX(0) rotateY(0)}100%{transform:rotateX(360deg) rotateY(360deg)}}
+    .cube-face-3d{position:absolute; width:80px; height:80px; display:grid; gap:1px; padding:4px; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); border:2px solid #333}
+    .cube-sticker{border-radius:6px; border:1px solid rgba(0,0,0,0.25)}
+    @media(min-width:768px){ .cube-3d{width:120px;height:120px} .cube-face-3d{width:120px;height:120px;padding:8px;border-width:3px} }
+
+    /* timer circle transparent */
+    .timer-circle{width:220px;height:220px;border-radius:50%;background:transparent;border:0; box-shadow:none; position:relative}
+    @media(min-width:768px){ .timer-circle{width:280px;height:280px} }
+
+    .progress-ring { transform: rotate(-90deg); width:100%; height:100%; position:absolute; left:0; top:0; pointer-events: none; } /* IMPORTANT: pointer-events none para não bloquear cliques */
+    .progress-circle { fill:none; stroke: rgba(255,255,255,0.12); stroke-width:8; }
+    .progress-bar { fill:none; stroke:#ffffff; stroke-width:8; stroke-linecap:round; transition: stroke-dashoffset 0.25s linear; }
+
+    .control-button {
+      background: rgba(255,255,255,0.12);
+      backdrop-filter: blur(8px);
+      border:1px solid rgba(255,255,255,0.12);
+      color: #fff;
+      transition: all .18s ease;
+      position: relative;
+      z-index: 20; /* garante que o botão fique acima de elementos absolutos */
+      cursor: pointer;
+    }
+    .control-button[disabled] { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .control-button:hover:not([disabled]){ transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.25) }
+    #stop-btn.big-stop{ transform: scale(1.22); padding:1.25rem 2rem; }
+
+    .glass { background: rgba(0,0,0,0.35); border-radius:12px; padding:12px; border:1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 30px rgba(0,0,0,0.3); color:#fff }
+    .notification { position:fixed; top:18px; right:18px; background:rgba(255,255,255,0.95); color:#222; padding:12px 16px; border-radius:10px; transform:translateX(380px); transition:transform .28s ease; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.2)}
+    .notification.show{ transform:translateX(0) }
+
+    .text-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Helvetica Neue", monospace; }
+
+  </style>
+</head>
+<body class="gradient-bg min-h-screen flex items-center justify-center p-6">
+  <main class="w-full max-w-4xl mx-auto flex flex-col items-center">
+
+    <div class="text-center mb-6">
+      <div class="cube-3d" style="display:none"></div>
+
+      <h1 id="timer-title" class="text-2xl md:text-4xl font-bold text-white mb-3 drop-shadow-lg">Speedcubing Timer</h1>
+
+      <div id="scramble-display" class="glass inline-block px-4 py-3 mb-2">
+        <div class="flex items-center justify-center gap-1 mb-2">
+          <div class="cube-face face-red"></div><div class="cube-face face-orange"></div><div class="cube-face face-yellow"></div>
+          <div class="cube-face face-green"></div><div class="cube-face face-blue"></div><div class="cube-face face-white"></div>
+        </div>
+        <p id="scramble-text" class="text-white text-mono font-bold break-all">R U R' U' R U R' F R F'</p>
+      </div>
+
+      <p class="text-sm md:text-base text-white opacity-90">Clique/pressione Espaço para iniciar 15s de inspeção — depois resolva.</p>
+    </div>
+
+    <div id="timer-container" class="timer-circle flex items-center justify-center mb-8">
+      <!-- SVG com pointer-events:none para não bloquear cliques -->
+      <svg class="progress-ring" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <circle class="progress-circle" cx="100" cy="100" r="var(--ring-radius)"></circle>
+        <circle id="progress-bar" class="progress-bar" cx="100" cy="100" r="var(--ring-radius)"></circle>
+      </svg>
+
+      <div class="text-center z-10">
+        <div id="time-display" class="text-4xl md:text-6xl font-bold text-white mb-2">15s</div>
+        <div id="subtext" class="text-sm md:text-lg text-white opacity-70">pronto para inspeção</div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 flex-wrap justify-center mb-6">
+      <button id="start-btn" class="control-button px-5 md:px-8 py-3 rounded-full text-white font-semibold text-sm md:text-lg shadow-lg" type="button">Iniciar Inspeção</button>
+      <button id="stop-btn" class="control-button px-5 md:px-8 py-3 rounded-full text-white font-semibold text-sm md:text-lg shadow-lg" type="button" disabled>Parar</button>
+      <button id="reset-btn" class="control-button px-5 md:px-8 py-3 rounded-full text-white font-semibold text-sm md:text-lg shadow-lg" type="button">Reset</button>
+      <button id="scramble-btn" class="control-button px-5 md:px-8 py-3 rounded-full text-white font-semibold text-sm md:text-lg shadow-lg" type="button">Novo Scramble</button>
+    </div>
+
+    <section class="w-full max-w-xl text-center">
+      <div class="glass p-4 mb-4">
+        <h3 class="text-white text-base md:text-lg font-semibold mb-3">Estatísticas do Cuber</h3>
+        <div id="times-history" class="bg-black bg-opacity-20 rounded-lg p-3 mb-3 text-left">
+          <p class="text-white opacity-60 text-sm">Seus tempos aparecerão aqui</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="glass p-3">
+            <div class="text-white text-xs opacity-70">Melhor Tempo</div>
+            <div id="best-time" class="text-yellow-300 font-bold text-sm md:text-lg">--:--</div>
+          </div>
+          <div class="glass p-3">
+            <div class="text-white text-xs opacity-70">Média (5)</div>
+            <div id="average-time" class="text-blue-300 font-bold text-sm md:text-lg">--:--</div>
+          </div>
+        </div>
+
+        <div class="mt-3 text-xs text-white opacity-70">Atalhos: Espaço = Inspeção→Solve→Stop | R = Reset | S = Scramble</div>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="notification" class="notification" aria-live="polite">Tempo registrado!</div>
+
+<script>
+/* ---------- Estado ---------- */
+const timerState = {
+  isInspecting: false,
+  isRunning: false,
+  inspectionTimeMs: 15000,
+  inspectionStart: 0,
+  startTime: 0,
+  currentMs: 0,
+  intervalId: null
+};
+
+let timesHistory = JSON.parse(localStorage.getItem('timesHistory_v1') || '[]');
+
+/* ---------- Elementos ---------- */
+const el = {
+  timeDisplay: document.getElementById('time-display'),
+  subtext: document.getElementById('subtext'),
+  startBtn: document.getElementById('start-btn'),
+  stopBtn: document.getElementById('stop-btn'),
+  resetBtn: document.getElementById('reset-btn'),
+  scrambleBtn: document.getElementById('scramble-btn'),
+  progressBar: document.getElementById('progress-bar'),
+  scrambleText: document.getElementById('scramble-text'),
+  timesHistory: document.getElementById('times-history'),
+  bestTime: document.getElementById('best-time'),
+  avgTime: document.getElementById('average-time'),
+  notification: document.getElementById('notification')
+};
+
+/* ---------- Progress ring setup ---------- */
+const RADIUS = Number(getComputedStyle(document.documentElement).getPropertyValue('--ring-radius')) || 90;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+el.progressBar.setAttribute('stroke-dasharray', `${CIRCUMFERENCE} ${CIRCUMFERENCE}`);
+el.progressBar.style.strokeDashoffset = CIRCUMFERENCE;
+
+/* ---------- Util ---------- */
+function formatTime(ms) {
+  if (ms < 0) ms = 0;
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const cent = Math.floor((ms % 1000) / 10);
+  if (minutes > 0) return `${minutes}:${String(seconds).padStart(2,'0')}.${String(cent).padStart(2,'0')}`;
+  return `${seconds}.${String(cent).padStart(2,'0')}`;
+}
+
+function updateProgress(elapsedMs) {
+  const maxMs = 5 * 60 * 1000;
+  const progress = Math.min(elapsedMs / maxMs, 1);
+  const offset = CIRCUMFERENCE - (progress * CIRCUMFERENCE);
+  el.progressBar.style.strokeDashoffset = offset;
+}
+
+/* ---------- Scramble ---------- */
+const scrambleMoves = ['R','L','U','D','F','B'];
+const modifiers = ['', "'", '2'];
+function generateScramble(length = 20) {
+  let scr = [];
+  let last = '';
+  for (let i=0;i<length;i++) {
+    let move;
+    do { move = scrambleMoves[Math.floor(Math.random()*scrambleMoves.length)]; } while (move === last);
+    const mod = modifiers[Math.floor(Math.random()*modifiers.length)];
+    scr.push(move + mod);
+    last = move;
+  }
+  return scr.join(' ');
+}
+
+/* ---------- UI updates ---------- */
+function updateTimesHistoryUI() {
+  if (!timesHistory.length) {
+    el.timesHistory.innerHTML = '<p class="text-white opacity-60 text-sm">Seus tempos aparecerão aqui</p>';
+    return;
+  }
+  const recent = timesHistory.slice(-20).reverse();
+  el.timesHistory.innerHTML = recent.map((t, i) => {
+    const idx = timesHistory.length - i;
+    return `<div class="flex justify-between items-center py-2 px-2 rounded ${i===0 ? 'bg-yellow-500 bg-opacity-10 text-yellow-300 font-bold' : 'text-white opacity-80'}">
+      <span>Solve #${idx}</span><span class="font-mono">${formatTime(t)}</span>
+    </div>`;
+  }).join('');
+}
+
+function updateStatsUI() {
+  if (!timesHistory.length) {
+    el.bestTime.textContent = '--:--';
+    el.avgTime.textContent = '--:--';
+    return;
+  }
+  const best = Math.min(...timesHistory);
+  el.bestTime.textContent = formatTime(best);
+  if (timesHistory.length >= 5) {
+    const lastFive = timesHistory.slice(-5);
+    const avg = Math.round(lastFive.reduce((a,b)=>a+b,0)/5);
+    el.avgTime.textContent = formatTime(avg);
+  } else {
+    el.avgTime.textContent = '--:--';
+  }
+}
+
+/* ---------- Notification ---------- */
+let notifTimer = null;
+function showNotification(text = 'Tempo registrado!') {
+  el.notification.textContent = text;
+  el.notification.classList.add('show');
+  clearTimeout(notifTimer);
+  notifTimer = setTimeout(()=> el.notification.classList.remove('show'), 2800);
+}
+
+/* ---------- Timer flows ---------- */
+function startInspection() {
+  if (timerState.isInspecting || timerState.isRunning) return;
+  console.log('[timer] startInspection called');
+  timerState.isInspecting = true;
+  timerState.inspectionStart = Date.now();
+  el.startBtn.textContent = 'Inspecionando...';
+  el.subtext.textContent = 'inspeção';
+  timerState.intervalId = setInterval(()=> {
+    const elapsed = Date.now() - timerState.inspectionStart;
+    const remaining = Math.max(0, timerState.inspectionTimeMs - elapsed);
+    const seconds = Math.ceil(remaining / 1000);
+    el.timeDisplay.textContent = `${seconds}s`;
+    if (remaining <= 3000 && remaining > 0) el.timeDisplay.style.color = '#ff4444';
+    else if (remaining <= 8000) el.timeDisplay.style.color = '#ffaa00';
+    else el.timeDisplay.style.color = '#ffffff';
+    updateProgress((timerState.inspectionTimeMs - remaining) * 10);
+    if (remaining <= 0) {
+      clearInterval(timerState.intervalId);
+      timerState.intervalId = null;
+      startSolveTimer();
+    }
+  }, 50);
+}
+
+function startSolveTimer() {
+  if (timerState.isRunning) return;
+  console.log('[timer] startSolveTimer called');
+  if (timerState.isInspecting) {
+    timerState.isInspecting = false;
+    if (timerState.intervalId) { clearInterval(timerState.intervalId); timerState.intervalId = null; }
+  }
+  timerState.isRunning = true;
+  timerState.startTime = Date.now();
+  el.startBtn.textContent = 'Resolvendo...';
+  el.subtext.textContent = 'resolvendo';
+  el.stopBtn.disabled = false;
+  el.stopBtn.classList.remove('opacity-50');
+  el.stopBtn.classList.add('big-stop');
+
+  timerState.intervalId = setInterval(()=> {
+    timerState.currentMs = Date.now() - timerState.startTime;
+    el.timeDisplay.textContent = formatTime(timerState.currentMs);
+    el.timeDisplay.style.color = '#ffffff';
+    updateProgress(timerState.currentMs);
+  }, 10);
+}
+
+function stopSolveTimer() {
+  if (!timerState.isRunning) { console.log('[timer] stopSolveTimer ignored (not running)'); return; }
+  console.log('[timer] stopSolveTimer called');
+  timerState.isRunning = false;
+  if (timerState.intervalId) { clearInterval(timerState.intervalId); timerState.intervalId = null; }
+
+  el.stopBtn.classList.remove('big-stop');
+  el.stopBtn.disabled = true;
+  el.stopBtn.classList.add('opacity-50');
+
+  const finalMs = timerState.currentMs || (Date.now() - timerState.startTime);
+  timesHistory.push(finalMs);
+  if (timesHistory.length > 1000) timesHistory = timesHistory.slice(-1000);
+  localStorage.setItem('timesHistory_v1', JSON.stringify(timesHistory));
+
+  updateTimesHistoryUI();
+  updateStatsUI();
+  showNotification('Tempo registrado!');
+
+  timerState.currentMs = 0;
+  el.startBtn.textContent = 'Iniciar Inspeção';
+  el.subtext.textContent = 'pronto para inspeção';
+  setTimeout(()=> { el.progressBar.style.strokeDashoffset = CIRCUMFERENCE; }, 400);
+}
+
+function resetTimerFull() {
+  console.log('[timer] resetTimerFull called');
+  if (timerState.intervalId) { clearInterval(timerState.intervalId); timerState.intervalId = null; }
+  timerState.isRunning = false;
+  timerState.isInspecting = false;
+  timerState.currentMs = 0;
+  el.timeDisplay.textContent = '15s';
+  el.timeDisplay.style.color = '#ffffff';
+  el.startBtn.textContent = 'Iniciar Inspeção';
+  el.subtext.textContent = 'pronto para inspeção';
+  el.stopBtn.disabled = true;
+  el.stopBtn.classList.add('opacity-50');
+  el.stopBtn.classList.remove('big-stop');
+  el.progressBar.style.strokeDashoffset = CIRCUMFERENCE;
+}
+
+/* ---------- Event listeners (with console logs) ---------- */
+el.startBtn.addEventListener('click', ()=> {
+  console.log('[ui] start button clicked', {isInspecting: timerState.isInspecting, isRunning: timerState.isRunning});
+  if (!timerState.isInspecting && !timerState.isRunning) startInspection();
+  else if (timerState.isInspecting && !timerState.isRunning) startSolveTimer();
+});
+
+el.stopBtn.addEventListener('click', ()=> {
+  console.log('[ui] stop button clicked');
+  if (timerState.isRunning) stopSolveTimer();
+});
+
+el.resetBtn.addEventListener('click', ()=> {
+  console.log('[ui] reset button clicked');
+  resetTimerFull();
+});
+
+el.scrambleBtn.addEventListener('click', ()=> {
+  console.log('[ui] scramble button clicked');
+  const scr = generateScramble();
+  el.scrambleText.textContent = scr;
+});
+
+/* ---------- Keyboard shortcuts ---------- */
+document.addEventListener('keydown', (e)=> {
+  const tag = document.activeElement?.tagName?.toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    console.log('[kbd] space pressed');
+    if (!timerState.isInspecting && !timerState.isRunning) startInspection();
+    else if (timerState.isInspecting && !timerState.isRunning) startSolveTimer();
+    else if (timerState.isRunning) stopSolveTimer();
+  } else if (e.key.toLowerCase() === 'r') {
+    console.log('[kbd] r pressed');
+    resetTimerFull();
+  } else if (e.key.toLowerCase() === 's') {
+    console.log('[kbd] s pressed');
+    const scr = generateScramble();
+    el.scrambleText.textContent = scr;
+  }
+});
+
+/* ---------- Init ---------- */
+function init() {
+  el.scrambleText.textContent = generateScramble();
+  updateTimesHistoryUI();
+  updateStatsUI();
+  el.stopBtn.disabled = true;
+  el.stopBtn.classList.add('opacity-50');
+  el.progressBar.style.strokeDashoffset = CIRCUMFERENCE;
+  console.log('[init] initialized');
+}
+init();
+
+</script>
+</body>
+</html>
